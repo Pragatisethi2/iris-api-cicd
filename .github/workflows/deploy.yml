@@ -1,4 +1,4 @@
-name: Deploy Iris API
+name: Simple CD Pipeline
 
 on:
   push:
@@ -15,26 +15,34 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
-    - name: Setup Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
       with:
-        project_id: ${{ secrets.GCP_PROJECT_ID }}
-        service_account_key: ${{ secrets.GCP_SA_KEY }}
-        export_default_credentials: true
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
     
     - name: Configure Docker
       run: gcloud auth configure-docker us-central1-docker.pkg.dev
     
-    - name: Build and Push
+    - name: Build and Push Docker Image
       run: |
+        echo "Building Docker image..."
         docker build -t $IMAGE:$GITHUB_SHA .
         docker tag $IMAGE:$GITHUB_SHA us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+        echo "Pushing to registry..."
         docker push us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+        echo "✅ Image pushed successfully!"
     
-    - name: Deploy to GKE
+    - name: Deploy to Kubernetes
       run: |
+        echo "Connecting to cluster..."
         gcloud container clusters get-credentials $GKE_CLUSTER --zone $GKE_ZONE
+        echo "Updating deployment..."
         kubectl set image deployment/iris-api iris-api=us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
         kubectl rollout status deployment/iris-api
+        echo "✅ Deployed successfully to Kubernetes!"
+        echo "🌐 Your API: http://104.198.237.109"
