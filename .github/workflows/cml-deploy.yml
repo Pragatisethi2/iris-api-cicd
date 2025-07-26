@@ -26,8 +26,9 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install scikit-learn==1.6.1  # Use same version as your model
         pip install -r requirements.txt
-        pip install matplotlib seaborn requests scikit-learn
+        pip install matplotlib seaborn requests
     
     - name: Test model and generate report
       run: |
@@ -35,45 +36,73 @@ jobs:
         import joblib
         import numpy as np
         from sklearn.datasets import load_iris
-        from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+        from sklearn.metrics import accuracy_score, classification_report
         import matplotlib.pyplot as plt
-        import seaborn as sns
         import json
+        import warnings
+        warnings.filterwarnings('ignore')
         
+        # Load model and test data
         model = joblib.load('model.joblib')
         iris = load_iris()
         X_test, y_test = iris.data, iris.target
+        
+        # Make predictions
         y_pred = model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
         
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+        # Create simple but effective plots
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
         
+        # 1. Accuracy Bar Chart
+        ax1.bar(['Model Accuracy'], [accuracy], color='green', alpha=0.7)
+        ax1.set_ylim(0, 1)
+        ax1.set_title(f'Model Accuracy: {accuracy:.4f}')
+        ax1.set_ylabel('Accuracy Score')
+        
+        # 2. Class-wise accuracy
+        from sklearn.metrics import confusion_matrix
         cm = confusion_matrix(y_test, y_pred)
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                    xticklabels=iris.target_names, yticklabels=iris.target_names, ax=ax1)
-        ax1.set_title('Confusion Matrix')
+        class_accuracy = cm.diagonal() / cm.sum(axis=1)
+        ax2.bar(iris.target_names, class_accuracy, color=['red', 'green', 'blue'], alpha=0.7)
+        ax2.set_title('Per-Class Accuracy')
+        ax2.set_ylabel('Accuracy')
+        ax2.tick_params(axis='x', rotation=45)
         
-        ax2.bar(['Accuracy'], [accuracy], color='green', alpha=0.7)
-        ax2.set_ylim(0, 1)
-        ax2.set_title(f'Model Accuracy: {accuracy:.4f}')
-        
-        feature_names = ['Sepal Length', 'Sepal Width', 'Petal Length', 'Petal Width']
+        # 3. Feature Importance (simulated)
+        feature_names = ['Sepal Len', 'Sepal Wid', 'Petal Len', 'Petal Wid']
         importance = np.random.random(4)
         ax3.barh(feature_names, importance, color='orange', alpha=0.7)
-        ax3.set_title('Feature Importance')
+        ax3.set_title('Feature Importance (Simulated)')
+        ax3.set_xlabel('Importance Score')
         
+        # 4. Prediction Distribution
         unique, counts = np.unique(y_pred, return_counts=True)
-        ax4.pie(counts, labels=[iris.target_names[i] for i in unique], autopct='%1.1f%%')
-        ax4.set_title('Class Distribution')
+        ax4.pie(counts, labels=[iris.target_names[i] for i in unique], 
+                autopct='%1.1f%%', startangle=90)
+        ax4.set_title('Prediction Distribution')
         
         plt.tight_layout()
         plt.savefig('model_performance.png', dpi=300, bbox_inches='tight')
+        plt.close()
         
+        # Save metrics with detailed info
         report = classification_report(y_test, y_pred, target_names=iris.target_names, output_dict=True)
-        metrics = {'accuracy': float(accuracy), 'f1_macro': report['macro avg']['f1-score']}
+        metrics = {
+            'accuracy': float(accuracy),
+            'precision_macro': report['macro avg']['precision'],
+            'recall_macro': report['macro avg']['recall'],
+            'f1_macro': report['macro avg']['f1-score'],
+            'total_samples': len(y_test),
+            'correct_predictions': int(accuracy * len(y_test))
+        }
         
         with open('metrics.json', 'w') as f:
             json.dump(metrics, f, indent=2)
+        
+        print(f'✅ Model testing completed successfully!')
+        print(f'📊 Accuracy: {accuracy:.4f}')
+        print(f'📈 F1-Score: {report[\"macro avg\"][\"f1-score\"]:.4f}')
         "
     
     - name: Create CML Report
@@ -82,16 +111,36 @@ jobs:
       run: |
         echo "# 🤖 Iris Classifier - CML Pipeline Report" >> report.md
         echo "" >> report.md
-        echo "## 📊 Model Performance" >> report.md
+        echo "## 📊 Model Performance Metrics" >> report.md
+        echo "" >> report.md
+        
+        # Extract metrics safely
         ACCURACY=$(python -c "import json; print(f'{json.load(open(\"metrics.json\"))[\"accuracy\"]:.4f}')")
+        PRECISION=$(python -c "import json; print(f'{json.load(open(\"metrics.json\"))[\"precision_macro\"]:.4f}')")
+        RECALL=$(python -c "import json; print(f'{json.load(open(\"metrics.json\"))[\"recall_macro\"]:.4f}')")
         F1=$(python -c "import json; print(f'{json.load(open(\"metrics.json\"))[\"f1_macro\"]:.4f}')")
-        echo "**Accuracy:** $ACCURACY" >> report.md
-        echo "**F1-Score:** $F1" >> report.md
+        SAMPLES=$(python -c "import json; print(json.load(open(\"metrics.json\"))[\"total_samples\"])")
+        
+        echo "| Metric | Value |" >> report.md
+        echo "|--------|-------|" >> report.md
+        echo "| **Accuracy** | $ACCURACY |" >> report.md
+        echo "| **Precision** | $PRECISION |" >> report.md
+        echo "| **Recall** | $RECALL |" >> report.md
+        echo "| **F1-Score** | $F1 |" >> report.md
+        echo "| **Test Samples** | $SAMPLES |" >> report.md
+        echo "" >> report.md
+        
+        echo "## 📈 Performance Visualization" >> report.md
         echo "" >> report.md
         cml publish model_performance.png --md >> report.md
         echo "" >> report.md
-        echo "## 🚀 Deployment Status" >> report.md
-        echo "Proceeding to deployment..." >> report.md
+        
+        echo "## 🚀 Pipeline Status" >> report.md
+        echo "- ✅ **Model Testing**: Completed successfully" >> report.md
+        echo "- ✅ **Performance Analysis**: Generated" >> report.md
+        echo "- 🔄 **Deployment**: In progress..." >> report.md
+        echo "" >> report.md
+        
         cml comment create report.md
 
   deploy:
@@ -113,15 +162,26 @@ jobs:
     - name: Configure Docker
       run: gcloud auth configure-docker us-central1-docker.pkg.dev
     
-    - name: Build and Push
+    - name: Build and Push Docker Image
       run: |
+        echo "🐳 Building Docker image..."
         docker build -t $IMAGE:$GITHUB_SHA .
+        echo "🏷️ Tagging image..."
         docker tag $IMAGE:$GITHUB_SHA us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+        echo "📤 Pushing to Artifact Registry..."
         docker push us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+        echo "✅ Docker image pushed successfully!"
     
-    - name: Deploy to GKE
+    - name: Deploy to Kubernetes
       run: |
+        echo "⚙️ Connecting to GKE cluster..."
         gcloud container clusters get-credentials $GKE_CLUSTER --zone $GKE_ZONE
+        echo "🚀 Updating deployment..."
         kubectl set image deployment/iris-api iris-api=us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+        echo "⏳ Waiting for rollout to complete..."
         kubectl rollout status deployment/iris-api
         echo "✅ Deployment completed successfully!"
+        
+        # Get service status
+        EXTERNAL_IP=$(kubectl get service iris-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "🌐 API available at: http://$EXTERNAL_IP"
