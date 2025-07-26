@@ -33,3 +33,45 @@ def predict_species(data: IrisInput):
 def get_version():
     return {"version": "2.0", "message": "Updated via CD pipeline!"}
 
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "Iris ML API",
+        "version": "1.0",
+        "deployment": "Kubernetes + Docker",
+        "timestamp": "2025-07-26"
+    }
+
+@app.get("/info")
+def api_info():
+    return {
+        "api_name": "Iris Species Classifier",
+        "model_type": "Decision Tree",
+        "features": ["sepal_length", "sepal_width", "petal_length", "petal_width"],
+        "classes": ["setosa", "versicolor", "virginica"],
+        "author": "Pragati Sethi",
+        "deployment": "GKE with CI/CD"
+    }
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "Iris ML API",
+        "version": "1.0",
+        "deployment": "Kubernetes + Docker",
+        "timestamp": "2025-07-26"
+    }
+
+@app.get("/info")
+def api_info():
+    return {
+        "api_name": "Iris Species Classifier",
+        "model_type": "Decision Tree",
+        "features": ["sepal_length", "sepal_width", "petal_length", "petal_width"],
+        "classes": ["setosa", "versicolor", "virginica"],
+        "author": "Pragati Sethi",
+        "deployment": "GKE with CI/CD"
+    }
