@@ -28,3 +28,8 @@ def predict_species(data: IrisInput):
     return {
         "predicted_class": prediction
     }
+
+@app.get("/version")
+def get_version():
+    return {"version": "2.0", "message": "Updated via CD pipeline!"}
+
