@@ -4,6 +4,12 @@ on:
   push:
     branches: [ main ]
 
+env:
+  PROJECT_ID: unique-alloy-459915-m1
+  GKE_CLUSTER: iris-cluster
+  GKE_ZONE: us-central1-a
+  IMAGE: iris-api
+
 jobs:
   cml-pipeline:
     runs-on: ubuntu-latest
@@ -33,21 +39,18 @@ jobs:
         import matplotlib.pyplot as plt
         import json
         
-        # Load model and test
         model = joblib.load('model.joblib')
         iris = load_iris()
         X_test, y_test = iris.data, iris.target
         y_pred = model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
         
-        # Create simple plot
         plt.figure(figsize=(8, 6))
         plt.bar(['Accuracy'], [accuracy])
         plt.ylim(0, 1)
         plt.title('Model Accuracy')
         plt.savefig('accuracy.png')
         
-        # Save metrics
         with open('metrics.json', 'w') as f:
             json.dump({'accuracy': accuracy}, f)
         
@@ -64,7 +67,43 @@ jobs:
         ACCURACY=$(python -c "import json; print(json.load(open('metrics.json'))['accuracy'])")
         echo "**Accuracy:** $ACCURACY" >> report.md
         echo "" >> report.md
-        echo "**API Status:** ✅ Deployed at http://104.198.237.109" >> report.md
-        echo "" >> report.md
         cml publish accuracy.png --md >> report.md
         cml comment create report.md
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: cml-pipeline
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+    
+    - name: Configure Docker for Artifact Registry
+      run: |
+        gcloud auth configure-docker us-central1-docker.pkg.dev
+    
+    - name: Build and Push Docker Image
+      run: |
+        docker build -t $IMAGE:$GITHUB_SHA .
+        docker tag $IMAGE:$GITHUB_SHA us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+        docker push us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+    
+    - name: Deploy to GKE
+      run: |
+        gcloud container clusters get-credentials $GKE_CLUSTER --zone $GKE_ZONE
+        kubectl set image deployment/iris-api iris-api=us-central1-docker.pkg.dev/$PROJECT_ID/my-repo/$IMAGE:$GITHUB_SHA
+        kubectl rollout status deployment/iris-api
+        
+    - name: Test Deployed API
+      run: |
+        EXTERNAL_IP=$(kubectl get service iris-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "Testing API at: http://$EXTERNAL_IP"
+        curl -f "http://$EXTERNAL_IP/" || echo "API test failed"
